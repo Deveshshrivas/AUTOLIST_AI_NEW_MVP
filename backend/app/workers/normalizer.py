@@ -106,6 +106,31 @@ SIZE_PATTERNS = [
     r"\b(free size|one size|free)\b",
 ]
 
+# Neckline patterns
+NECKLINE_PATTERNS = {
+    r"\bmandarin\s+collar\b": "Mandarin Collar",
+    r"\bmandarin\b": "Mandarin Collar",
+    r"\bv[-\s]?neck\b": "V-Neck",
+    r"\bv\s+neck\b": "V-Neck",
+    r"\bround\s+neck\b": "Round Neck",
+    r"\bcrew\s+neck\b": "Crew Neck",
+    r"\bboat\s+neck\b": "Boat Neck",
+    r"\bturtleneck\b": "Turtleneck",
+    r"\bturtle\s+neck\b": "Turtleneck",
+    r"\bhigh\s+neck\b": "High Neck",
+    r"\bcowl\s+neck\b": "Cowl Neck",
+    r"\bhalter\s+neck\b": "Halter Neck",
+    r"\boff[-\s]?shoulder\b": "Off Shoulder",
+    r"\bsquare\s+neck\b": "Square Neck",
+    r"\bscoop\s+neck\b": "Scoop Neck",
+    r"\bsweetheart\s+neck\b": "Sweetheart Neck",
+    r"\bcollar\s+neck\b": "Collar Neck",
+    r"\bchineese\s+collar\b": "Chinese Collar",
+    r"\bchinese\s+collar\b": "Chinese Collar",
+    r"\bnotch\s+collar\b": "Notch Collar",
+    r"\bshawl\s+collar\b": "Shawl Collar",
+}
+
 
 def clean_text(text: Optional[str]) -> str:
     """
@@ -289,6 +314,29 @@ def extract_sizes(text: str) -> List[str]:
     return sorted(list(sizes))
 
 
+def extract_neckline(text: str) -> Optional[str]:
+    """
+    Extract neckline/collar type from text.
+
+    Args:
+        text: Text to extract from (title, description, etc.)
+
+    Returns:
+        Extracted neckline type or None
+    """
+    if not text:
+        return None
+
+    text_lower = text.lower()
+
+    # Try to match neckline patterns
+    for pattern, neckline_type in NECKLINE_PATTERNS.items():
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return neckline_type
+
+    return None
+
+
 def simplify_variants(variants: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Simplify variant data to essential fields.
@@ -341,9 +389,10 @@ def normalize_product(product: Dict[str, Any]) -> Dict[str, Any]:
         Normalized product with extracted attributes
     """
     title = product.get("title", "")
-    description = product.get("description", "")
+    # Shopify uses body_html, but also accept description
+    description = product.get("body_html", product.get("description", ""))
 
-    # Combine all text for material/color extraction
+    # Combine all text for material/color/neckline extraction
     all_text = f"{title} {description}"
 
     # Add metafield text if present
@@ -370,6 +419,7 @@ def normalize_product(product: Dict[str, Any]) -> Dict[str, Any]:
         "cleaned_description": clean_description(description),
         "extracted_materials": extract_materials(all_text),
         "extracted_colors": extract_colors(all_text),
+        "extracted_neckline": extract_neckline(all_text),
         "sizes": extract_sizes(all_text),
         "variants_simplified": simplify_variants(variants),
 

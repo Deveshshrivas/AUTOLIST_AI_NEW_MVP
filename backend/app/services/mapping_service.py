@@ -187,7 +187,7 @@ def extract_from_variants(
 
                 # Heuristic: if it looks like a color
                 if canonical_field == "color":
-                    from .normalizer import COLOR_MAP
+                    from ..workers.normalizer import COLOR_MAP
                     if str(option_value).lower() in COLOR_MAP:
                         return option_value, f"variant.{option_key}", 0.85
 
@@ -287,6 +287,15 @@ def map_single_field(
                             source = f"metafield.custom.{syn}"
                             confidence = 0.90
                             break
+                
+                # Special case: fabric from material_type or fabric_type
+                if value is None and canonical_field == "fabric":
+                    for key in ["material_type", "fabric_type", "material", "fabric_composition"]:
+                        if key in custom:
+                            value = custom[key]
+                            source = f"metafield.custom.{key}"
+                            confidence = 0.90
+                            break
 
     # 4. Synonym dictionary mapping
     if value is None:
@@ -316,7 +325,33 @@ def map_single_field(
             if materials:
                 value = ", ".join(materials)
                 source = "extracted.materials"
-                confidence = 0.60
+                confidence = 0.75
+            else:
+                # Try to extract from title or description
+                title = product.get("cleaned_title", "")
+                description = product.get("cleaned_description", "")
+                combined_text = f"{title} {description}".lower()
+                
+                # Common fabric keywords in product titles/descriptions
+                fabric_keywords = {
+                    "cotton": "Cotton",
+                    "polyester": "Polyester",
+                    "silk": "Silk",
+                    "linen": "Linen",
+                    "wool": "Wool",
+                    "denim": "Denim",
+                    "leather": "Leather",
+                    "rayon": "Rayon",
+                    "nylon": "Nylon",
+                    "spandex": "Spandex",
+                }
+                
+                for keyword, fabric_name in fabric_keywords.items():
+                    if keyword in combined_text:
+                        value = fabric_name
+                        source = "inferred.fabric"
+                        confidence = 0.70
+                        break
 
         elif canonical_field == "color":
             colors = product.get("extracted_colors", [])
@@ -331,6 +366,62 @@ def map_single_field(
                 value = sizes[0] if len(sizes) == 1 else ", ".join(sizes)
                 source = "extracted.sizes"
                 confidence = 0.60
+        
+        elif canonical_field == "neckline":
+            neckline = product.get("extracted_neckline")
+            if neckline:
+                value = neckline
+                source = "extracted.neckline"
+                confidence = 0.90
+        
+        elif canonical_field == "parent_sku":
+            # Try to generate parent SKU from variant SKU
+            variants = product.get("variants_simplified", product.get("variants", []))
+            if variants and variants[0].get("sku"):
+                sku = variants[0]["sku"]
+                # Extract parent from patterns like "K001-M-BLUE" -> "K001"
+                # or "SHIRT_RED_L" -> "SHIRT"
+                import re
+                # Try common patterns
+                patterns = [
+                    r"^([A-Z0-9]+)[-_]",  # K001-M-BLUE -> K001
+                    r"^([A-Z]+\d+)",       # K001MBLUE -> K001
+                ]
+                for pattern in patterns:
+                    match = re.match(pattern, str(sku).upper())
+                    if match:
+                        value = match.group(1)
+                        source = "generated.parent_sku"
+                        confidence = 0.85
+                        break
+        
+        elif canonical_field == "neckline":
+            neckline = product.get("extracted_neckline")
+            if neckline:
+                value = neckline
+                source = "extracted.neckline"
+                confidence = 0.90
+        
+        elif canonical_field == "parent_sku":
+            # Try to generate parent SKU from variant SKU
+            variants = product.get("variants_simplified", product.get("variants", []))
+            if variants and variants[0].get("sku"):
+                sku = variants[0]["sku"]
+                # Extract parent from patterns like "K001-M-BLUE" -> "K001"
+                # or "SHIRT_RED_L" -> "SHIRT"
+                import re
+                # Try common patterns
+                patterns = [
+                    r"^([A-Z0-9]+)[-_]",  # K001-M-BLUE -> K001
+                    r"^([A-Z]+\d+)",       # K001MBLUE -> K001
+                ]
+                for pattern in patterns:
+                    match = re.match(pattern, str(sku).upper())
+                    if match:
+                        value = match.group(1)
+                        source = "generated.parent_sku"
+                        confidence = 0.85
+                        break
 
     # 7. Image URL mapping
     if value is None and canonical_field == "main_image_url":

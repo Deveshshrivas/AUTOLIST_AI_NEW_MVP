@@ -2,23 +2,23 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { mappingAPI } from '../services/api'
 
-// Sample mapping data for demo
+// Sample mapping data for demo (updated with backend improvements)
 const SAMPLE_MAPPING = {
   job_id: 'job_123',
   product_id: 'prod_1',
   template_schema_id: 'amazon_shirt_v1',
-  status: 'needs_user_input',
+  status: 'ready',
   mappings: {
     sku: { value: 'PCTS-BLU-S', source: 'variant.sku', confidence: 0.95 },
-    title: { value: 'Premium Cotton T-Shirt - Blue', source: 'product.title', confidence: 0.95 },
+    parent_sku: { value: 'PCTS', source: 'generated.parent_sku', confidence: 0.85 },
+    title: { value: 'Premium Cotton T-Shirt - Blue', source: 'product.cleaned_title', confidence: 0.95 },
     brand: { value: 'AutoList Fashion', source: 'product.vendor', confidence: 0.90 },
-    description: { value: 'Soft, breathable cotton t-shirt perfect for summer.', source: 'product.description', confidence: 0.85 },
-    fabric: { value: 'Cotton', source: 'ai_description', confidence: 0.75 },
-    color: { value: 'Blue', source: 'extracted.colors', confidence: 0.80 },
-    size: { value: 'S', source: 'variant.option1', confidence: 0.90 },
+    description: { value: 'Soft, breathable cotton t-shirt perfect for summer.', source: 'product.cleaned_description', confidence: 0.95 },
+    fabric: { value: 'Cotton', source: 'inferred.fabric', confidence: 0.70 },
+    color: { value: 'Blue', source: 'extracted.colors', confidence: 0.60 },
+    size: { value: 'S', source: 'variant.option1', confidence: 0.85 },
     price: { value: '29.99', source: 'variant.price', confidence: 0.95 },
-    main_image_url: { value: 'https://example.com/image.jpg', source: 'product.images', confidence: 0.95 },
-    parent_sku: { value: null, source: 'not_found', confidence: 0.0 },
+    main_image_url: { value: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400', source: 'product.main_image_url', confidence: 0.95 },
   },
 }
 
@@ -53,6 +53,7 @@ const ConfidenceBadge = ({ confidence }) => {
 const EditableField = ({ field, mapping, onUpdate }) => {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(mapping.value || '')
+  const [imageError, setImageError] = useState(false)
 
   const handleSave = () => {
     onUpdate(field, editValue)
@@ -64,6 +65,11 @@ const EditableField = ({ field, mapping, onUpdate }) => {
     setIsEditing(false)
   }
 
+  // Check if this is an image URL field
+  const isImageField = field.toLowerCase().includes('image') || field.toLowerCase().includes('img')
+  const hasValidImageUrl = mapping.value && typeof mapping.value === 'string' && 
+    (mapping.value.startsWith('http://') || mapping.value.startsWith('https://'))
+
   return (
     <div className="flex items-center space-x-2">
       {isEditing ? (
@@ -74,22 +80,51 @@ const EditableField = ({ field, mapping, onUpdate }) => {
             onChange={(e) => setEditValue(e.target.value)}
             className="input py-1 px-2 text-sm flex-1"
             autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSave()
+              if (e.key === 'Escape') handleCancel()
+            }}
           />
-          <button onClick={handleSave} className="text-emerald-600 hover:text-emerald-700">
+          <button 
+            onClick={handleSave} 
+            className="text-emerald-600 hover:text-emerald-700 font-bold text-lg"
+            title="Save"
+          >
             ✓
           </button>
-          <button onClick={handleCancel} className="text-red-600 hover:text-red-700">
+          <button 
+            onClick={handleCancel} 
+            className="text-red-600 hover:text-red-700 font-bold text-lg"
+            title="Cancel"
+          >
             ✕
           </button>
         </>
       ) : (
         <>
-          <span className={`flex-1 ${mapping.value ? '' : 'text-gray-400 italic'}`}>
-            {mapping.value || 'Not mapped'}
-          </span>
+          <div className="flex-1 flex items-center space-x-3">
+            {isImageField && hasValidImageUrl && !imageError ? (
+              <>
+                <img 
+                  src={mapping.value} 
+                  alt="Product preview"
+                  className="w-16 h-16 object-cover rounded border border-gray-300"
+                  onError={() => setImageError(true)}
+                />
+                <span className="text-sm text-gray-600 truncate max-w-xs" title={mapping.value}>
+                  {mapping.value}
+                </span>
+              </>
+            ) : (
+              <span className={`${mapping.value ? '' : 'text-gray-400 italic'}`}>
+                {mapping.value || 'Not mapped'}
+              </span>
+            )}
+          </div>
           <button
             onClick={() => setIsEditing(true)}
-            className="text-gray-400 hover:text-indigo-600"
+            className="text-gray-400 hover:text-indigo-600 transition-colors"
+            title="Edit value"
           >
             ✏️
           </button>
@@ -141,15 +176,25 @@ export default function MappingPreview() {
   }
 
   const handleApproveAll = () => {
-    // Update all fields with AI suggestions to high confidence
+    // Update all fields with suggestions to high confidence
+    const updatedMappings = {}
+    Object.entries(mapping.mappings).forEach(([field, data]) => {
+      if (data.value) {
+        // Boost confidence for all mapped fields
+        updatedMappings[field] = {
+          ...data,
+          confidence: Math.max(data.confidence, 0.9),
+          source: data.source === 'ai' ? 'ai_approved' : data.source
+        }
+      } else {
+        updatedMappings[field] = data
+      }
+    })
+    
     setMapping((prev) => ({
       ...prev,
-      mappings: Object.fromEntries(
-        Object.entries(prev.mappings).map(([field, data]) => [
-          field,
-          data.value ? { ...data, confidence: Math.max(data.confidence, 0.9) } : data,
-        ])
-      ),
+      mappings: updatedMappings,
+      status: 'ready'
     }))
   }
 
@@ -179,8 +224,11 @@ export default function MappingPreview() {
   }
 
   const mappingEntries = Object.entries(mapping.mappings || {})
-  const mappedCount = mappingEntries.filter(([_, m]) => m.value).length
-  const avgConfidence = mappingEntries.reduce((sum, [_, m]) => sum + (m.value ? m.confidence : 0), 0) / mappedCount || 0
+  const mappedCount = mappingEntries.filter(([_, m]) => m.value !== null && m.value !== undefined && m.value !== '').length
+  const totalFields = mappingEntries.length
+  const avgConfidence = mappedCount > 0 
+    ? mappingEntries.reduce((sum, [_, m]) => sum + (m.value ? m.confidence : 0), 0) / mappedCount 
+    : 0
 
   return (
     <div>
@@ -202,7 +250,7 @@ export default function MappingPreview() {
         <div className="card">
           <div className="text-sm text-gray-500">Fields Mapped</div>
           <div className="text-2xl font-bold text-gray-900">
-            {mappedCount} / {mappingEntries.length}
+            {mappedCount} / {totalFields}
           </div>
         </div>
         <div className="card">
@@ -254,33 +302,52 @@ export default function MappingPreview() {
             </tr>
           </thead>
           <tbody className="table-body">
-            {mappingEntries.map(([field, data]) => (
-              <tr
-                key={field}
-                className={`table-row-hover ${
-                  data.confidence < 0.5 ? 'bg-amber-50' : ''
-                } ${!data.value ? 'bg-red-50' : ''}`}
-              >
-                <td>
-                  <span className="font-medium text-gray-900">{field}</span>
-                </td>
-                <td>
-                  <EditableField
-                    field={field}
-                    mapping={data}
-                    onUpdate={handleFieldUpdate}
-                  />
-                </td>
-                <td>
-                  <span className="text-xs text-gray-500 font-mono">
-                    {data.source}
-                  </span>
-                </td>
-                <td>
-                  <ConfidenceBadge confidence={data.confidence} />
-                </td>
-              </tr>
-            ))}
+            {mappingEntries
+              .sort(([fieldA, dataA], [fieldB, dataB]) => {
+                // Sort: unmapped first, then by confidence (low to high), then alphabetically
+                const hasValueA = dataA.value !== null && dataA.value !== undefined && dataA.value !== ''
+                const hasValueB = dataB.value !== null && dataB.value !== undefined && dataB.value !== ''
+                
+                if (!hasValueA && hasValueB) return -1
+                if (hasValueA && !hasValueB) return 1
+                if (hasValueA && hasValueB) {
+                  if (dataA.confidence !== dataB.confidence) {
+                    return dataA.confidence - dataB.confidence
+                  }
+                }
+                return fieldA.localeCompare(fieldB)
+              })
+              .map(([field, data]) => {
+                const hasValue = data.value !== null && data.value !== undefined && data.value !== ''
+                const isLowConfidence = hasValue && data.confidence < 0.5
+                const rowClass = !hasValue ? 'bg-red-50' : isLowConfidence ? 'bg-amber-50' : ''
+                
+                return (
+                  <tr
+                    key={field}
+                    className={`table-row-hover ${rowClass}`}
+                  >
+                    <td>
+                      <span className="font-medium text-gray-900">{field}</span>
+                    </td>
+                    <td>
+                      <EditableField
+                        field={field}
+                        mapping={data}
+                        onUpdate={handleFieldUpdate}
+                      />
+                    </td>
+                    <td>
+                      <span className="text-xs text-gray-500 font-mono">
+                        {data.source}
+                      </span>
+                    </td>
+                    <td>
+                      <ConfidenceBadge confidence={data.confidence} />
+                    </td>
+                  </tr>
+                )
+              })}
           </tbody>
         </table>
       </div>
